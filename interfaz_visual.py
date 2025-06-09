@@ -10,9 +10,9 @@ class InterfazVisual:
     def __init__(self, simulador: SimuladorAtencion, velocidad: int = 1):
         pygame.init()
         
-        # Configuración de pantalla
+        # Configuración de pantalla (aumentar altura para evitar superposiciones)
         self.ANCHO = 1200
-        self.ALTO = 800
+        self.ALTO = 850
         self.pantalla = pygame.display.set_mode((self.ANCHO, self.ALTO))
         pygame.display.set_caption("Simulador de Atención al Público")
         
@@ -40,45 +40,59 @@ class InterfazVisual:
         # Para grabar video
         self.grabando = False
         self.frames = []
+        self.frame_counter = 0  # Contador para limitar frames capturados
+        
+        # Posiciones de elementos
+        self.setup_posiciones()
+        
+        self.simulador = simulador
+        self.velocidad = velocidad
+        self.tiempo_actual = 0
+        self.indice_evento = 0
+        
+        # Para grabar video
+        self.grabando = False
+        self.frames = []
+        self.frame_counter = 0  # Contador para limitar frames capturados
         
         # Posiciones de elementos
         self.setup_posiciones()
         
     def setup_posiciones(self):
         """Configura las posiciones de los elementos visuales"""
-        # Área de boxes
-        self.boxes_area = pygame.Rect(50, 100, 500, 400)
-        self.box_width = 80
-        self.box_height = 60
+        # Área de boxes (más grande para mejor visualización)
+        self.boxes_area = pygame.Rect(50, 120, 700, 220)
+        self.box_width = 110
+        self.box_height = 100
         
-        # Área de cola
-        self.cola_area = pygame.Rect(600, 100, 200, 400)
+        # Área de cola (debajo de los boxes)
+        self.cola_area = pygame.Rect(50, 360, 700, 140)
         
-        # Área de estadísticas
-        self.stats_area = pygame.Rect(50, 520, 750, 250)
+        # Área de estadísticas (parte inferior)
+        self.stats_area = pygame.Rect(50, 520, 700, 300)
         
-        # Área de controles
-        self.controles_area = pygame.Rect(820, 100, 330, 400)
+        # Área de controles (panel derecho superior) - más estrecho y corto
+        self.controles_area = pygame.Rect(770, 80, 400, 280)
         
-        # Área de estado
-        self.estado_area = pygame.Rect(820, 520, 330, 250)
+        # Área de estado (panel derecho inferior) - ajustado para no superponerse
+        self.estado_area = pygame.Rect(770, 380, 400, 440)
         
     def dibujar_boxes(self):
         """Dibuja los boxes de atención"""
         # Título
         texto = self.fuente_mediana.render("BOXES DE ATENCIÓN", True, self.NEGRO)
-        self.pantalla.blit(texto, (self.boxes_area.x, self.boxes_area.y - 30))
+        self.pantalla.blit(texto, (self.boxes_area.x, self.boxes_area.y - 40))  # Más separación
         
-        # Calcular posiciones de boxes
-        boxes_por_fila = 5
+        # Calcular posiciones de boxes (máximo 6 por fila para mejor visualización)
+        boxes_por_fila = min(6, self.simulador.num_boxes)
         filas = (self.simulador.num_boxes + boxes_por_fila - 1) // boxes_por_fila
         
         for i, box in enumerate(self.simulador.boxes):
             fila = i // boxes_por_fila
             col = i % boxes_por_fila
             
-            x = self.boxes_area.x + col * (self.box_width + 20)
-            y = self.boxes_area.y + fila * (self.box_height + 30)
+            x = self.boxes_area.x + col * (self.box_width + 10)
+            y = self.boxes_area.y + fila * (self.box_height + 10)
             
             # Color del box según estado
             if box.ocupado:
@@ -94,13 +108,13 @@ class InterfazVisual:
             
             # Número del box
             texto = self.fuente_pequena.render(f"Box {i+1}", True, color_texto)
-            text_rect = texto.get_rect(center=(x + self.box_width//2, y + 15))
+            text_rect = texto.get_rect(center=(x + self.box_width//2, y + 20))
             self.pantalla.blit(texto, text_rect)
             
             # Cliente siendo atendido
             if box.ocupado and box.cliente_actual:
                 texto = self.fuente_pequena.render(f"Cliente {box.cliente_actual.id}", True, color_texto)
-                text_rect = texto.get_rect(center=(x + self.box_width//2, y + 35))
+                text_rect = texto.get_rect(center=(x + self.box_width//2, y + 45))
                 self.pantalla.blit(texto, text_rect)
                 
                 # Tiempo restante aproximado
@@ -108,14 +122,14 @@ class InterfazVisual:
                     tiempo_restante = max(0, box.tiempo_fin_atencion - self.tiempo_actual)
                     minutos_restantes = tiempo_restante // 60
                     texto = self.fuente_pequena.render(f"{minutos_restantes}min", True, color_texto)
-                    text_rect = texto.get_rect(center=(x + self.box_width//2, y + 50))
+                    text_rect = texto.get_rect(center=(x + self.box_width//2, y + 70))
                     self.pantalla.blit(texto, text_rect)
     
     def dibujar_cola(self):
         """Dibuja la cola de espera"""
         # Título
         texto = self.fuente_mediana.render(f"COLA DE ESPERA ({len(self.simulador.cola_espera)} clientes)", True, self.NEGRO)
-        self.pantalla.blit(texto, (self.cola_area.x, self.cola_area.y - 30))
+        self.pantalla.blit(texto, (self.cola_area.x, self.cola_area.y - 40))  # Más separación
         
         # Dibujar clientes en cola
         cliente_size = 25
@@ -227,7 +241,7 @@ class InterfazVisual:
         ]
         
         for i, (texto, color) in enumerate(elementos):
-            x = 50 + i * 200
+            x = 50 + i * 180  # Espaciado reducido para evitar superposiciones
             pygame.draw.circle(self.pantalla, color, (x, leyenda_y), 10)
             pygame.draw.circle(self.pantalla, self.NEGRO, (x, leyenda_y), 10, 2)
             
@@ -235,14 +249,28 @@ class InterfazVisual:
             self.pantalla.blit(texto_render, (x + 20, leyenda_y - 8))
     
     def capturar_frame(self):
-        """Captura el frame actual para el video"""
+        """Captura el frame actual para el video (limitando frecuencia)"""
         if self.grabando:
-            # Convertir superficie de pygame a array numpy
-            frame = pygame.surfarray.array3d(self.pantalla)
-            frame = np.rot90(frame)
-            frame = np.flipud(frame)
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            self.frames.append(frame)
+            # Solo capturar cada 4 frames para reducir memoria y crear video más fluido
+            self.frame_counter += 1
+            if self.frame_counter % 4 == 0:
+                try:
+                    # Convertir superficie de pygame a array numpy
+                    frame = pygame.surfarray.array3d(self.pantalla)
+                    frame = np.rot90(frame)
+                    frame = np.flipud(frame)
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    self.frames.append(frame)
+                    
+                    # Limitar cantidad de frames en memoria (aprox 5 minutos a 15fps)
+                    max_frames = 4500
+                    if len(self.frames) > max_frames:
+                        # Eliminar frames más antiguos
+                        self.frames = self.frames[-max_frames:]
+                        
+                except Exception as e:
+                    print(f"Error capturando frame: {e}")
+                    self.grabando = False
     
     def guardar_video(self, nombre_archivo: str = "simulacion.avi"):
         """Guarda los frames capturados como video AVI"""
@@ -251,29 +279,54 @@ class InterfazVisual:
             return
         
         try:
-            import cv2
+            print(f"Guardando video con {len(self.frames)} frames...")
             height, width, layers = self.frames[0].shape
             
-            # Intentar diferentes formas de crear el codec
-            try:
-                fourcc = cv2.VideoWriter.fourcc('X','V','I','D')
-            except:
-                try:
-                    fourcc = cv2.VideoWriter.fourcc(*'XVID')
-                except:
-                    fourcc = -1  # Sin compresión
+            # Usar codec más compatible
+            fourcc = cv2.VideoWriter.fourcc(*'MJPG')  # Motion JPEG, más compatible
+            fps = 15.0  # Reducido de 30 a 15 fps para mejor rendimiento
             
-            video = cv2.VideoWriter(nombre_archivo, fourcc, 30.0, (width, height))
+            video = cv2.VideoWriter(nombre_archivo, fourcc, fps, (width, height))
             
-            for frame in self.frames:
+            if not video.isOpened():
+                print("Error: No se pudo abrir el escritor de video")
+                return
+            
+            for i, frame in enumerate(self.frames):
                 video.write(frame)
+                # Mostrar progreso cada 100 frames
+                if i % 100 == 0:
+                    print(f"Procesando frame {i}/{len(self.frames)}")
             
             video.release()
-            print(f"Video guardado como {nombre_archivo}")
+            print(f"Video guardado exitosamente como {nombre_archivo}")
+            
+            # Limpiar frames de memoria
+            self.frames.clear()
             
         except Exception as e:
             print(f"Error al guardar video: {e}")
-            print("La funcionalidad de video requiere una instalación completa de OpenCV")
+            print("Intentando guardar con codec alternativo...")
+            try:
+                # Asegurar que tenemos las dimensiones
+                if self.frames:
+                    height, width, layers = self.frames[0].shape
+                    # Intentar con codec sin compresión
+                    fourcc = 0  # Sin compresión
+                    video = cv2.VideoWriter(nombre_archivo.replace('.avi', '_raw.avi'), 
+                                          fourcc, 15.0, (width, height))
+                    
+                    for frame in self.frames:
+                        video.write(frame)
+                    
+                    video.release()
+                    print(f"Video guardado sin compresión como {nombre_archivo.replace('.avi', '_raw.avi')}")
+                else:
+                    print("No hay frames disponibles para el codec alternativo")
+                
+            except Exception as e2:
+                print(f"Error con codec alternativo: {e2}")
+                print("La funcionalidad de video podría requerir codecs adicionales")
     
     def animar_simulacion(self, grabar_video: bool = False):
         """Anima la simulación paso a paso"""
@@ -299,25 +352,33 @@ class InterfazVisual:
         while self.tiempo_actual < self.simulador.DURACION_SIMULACION:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    print("Cerrando simulación...")
+                    self.cleanup()
+                    return
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE:
+                    if event.key == pygame.K_ESCAPE:
+                        print("Simulación interrumpida por el usuario")
+                        self.cleanup()
+                        return
+                    elif event.key == pygame.K_SPACE:
                         pausado = not pausado
+                        print("PAUSADO" if pausado else "REANUDADO")
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
                         velocidad_animacion = min(velocidad_animacion * 2, 480)
                         print(f"Velocidad: {velocidad_animacion//60}x")
                     elif event.key == pygame.K_MINUS:
                         velocidad_animacion = max(velocidad_animacion // 2, 15)
                         print(f"Velocidad: {velocidad_animacion//60}x")
-                    elif event.key == pygame.K_ESCAPE:
-                        if self.grabando:
-                            self.guardar_video()
-                        pygame.quit()
-                        sys.exit()
                     elif event.key == pygame.K_v:
                         self.grabando = not self.grabando
-                        print(f"Grabación: {'ACTIVADA' if self.grabando else 'DESACTIVADA'}")
+                        if self.grabando:
+                            print("Iniciando grabación de video...")
+                            self.frame_counter = 0  # Reiniciar contador
+                        else:
+                            print("Deteniendo grabación de video...")
+                            if self.frames:
+                                nombre_video = f"simulacion_manual_{self.simulador.num_boxes}_boxes.avi"
+                                self.guardar_video(nombre_video)
             
             if not pausado:
                 # Ejecutar un paso de la simulación
@@ -339,6 +400,13 @@ class InterfazVisual:
         
         # Mostrar estadísticas finales
         print("Simulación completada!")
+        
+        # Si estaba grabando, guardar el video
+        if self.grabando and self.frames:
+            print("Guardando video de la simulación...")
+            nombre_video = f"simulacion_{self.simulador.num_boxes}_boxes.avi"
+            self.guardar_video(nombre_video)
+        
         self.mostrar_estadisticas_finales()
         
         if self.grabando:
@@ -411,7 +479,8 @@ class InterfazVisual:
             pygame.display.flip()
             clock.tick(60)
         
-        pygame.quit()
+        # Usar cleanup en lugar de pygame.quit() directo
+        self.cleanup()
     
     def dibujar_controles(self):
         """Dibuja el panel de controles"""
@@ -422,25 +491,25 @@ class InterfazVisual:
         texto = self.fuente_mediana.render("CONTROLES", True, self.NEGRO)
         self.pantalla.blit(texto, (self.controles_area.x + 10, self.controles_area.y + 10))
         
-        # Lista de controles
+        # Lista de controles (texto más corto para evitar desbordamiento)
         controles = [
             "ESPACIO - Pausar/Reanudar",
             "+ - Aumentar velocidad",
             "- - Disminuir velocidad",
             "V - Activar/desactivar video",
-            "ESC - Salir de la simulación",
+            "ESC - Salir simulación",
             "",
             "INFORMACIÓN:",
-            "• La simulación corre de 8:00 a 12:00",
-            "• Los clientes llegan aleatoriamente",
-            "• Abandono después de 30 min",
-            "• Tiempo de atención: 10±5 min"
+            "• Simulación: 8:00 a 12:00",
+            "• Clientes llegan aleatorio",
+            "• Abandono tras 30 min",
+            "• Atención: 10±5 min"
         ]
         
         y_pos = self.controles_area.y + 45
         for control in controles:
             if control == "":
-                y_pos += 15
+                y_pos += 10  # Reducido espaciado
                 continue
             elif control.startswith("INFORMACIÓN:"):
                 texto = self.fuente_pequena.render(control, True, self.AZUL)
@@ -450,7 +519,7 @@ class InterfazVisual:
                 texto = self.fuente_pequena.render(control, True, self.NEGRO)
             
             self.pantalla.blit(texto, (self.controles_area.x + 10, y_pos))
-            y_pos += 25
+            y_pos += 20  # Reducido espaciado entre líneas
     
     def dibujar_estado(self, pausado: bool, velocidad_animacion: int):
         """Dibuja el estado actual de la simulación"""
@@ -494,21 +563,39 @@ class InterfazVisual:
         
         # Estado de grabación
         if self.grabando:
-            texto = self.fuente_pequena.render("🔴 GRABANDO VIDEO", True, self.ROJO)
+            frames_capturados = len(self.frames)
+            memoria_mb = (frames_capturados * 1200 * 800 * 3) / (1024 * 1024)  # Estimación aproximada
+            texto = self.fuente_pequena.render(f"🔴 GRABANDO VIDEO", True, self.ROJO)
             self.pantalla.blit(texto, (self.estado_area.x + 10, self.estado_area.y + 150))
+            
+            texto_frames = self.fuente_pequena.render(f"Frames: {frames_capturados} (~{memoria_mb:.1f}MB)", True, self.ROJO)
+            self.pantalla.blit(texto_frames, (self.estado_area.x + 10, self.estado_area.y + 175))
         
         # Tiempo restante estimado
         if not pausado and self.tiempo_actual > 0:
             tiempo_restante = self.simulador.DURACION_SIMULACION - self.tiempo_actual
             minutos_restantes = tiempo_restante // 60
             segundos_restantes = tiempo_restante % 60
+            y_tiempo = self.estado_area.y + 200 if self.grabando else self.estado_area.y + 180
             texto = self.fuente_pequena.render(f"Tiempo restante: {minutos_restantes:02d}:{segundos_restantes:02d}", True, self.NEGRO)
-            self.pantalla.blit(texto, (self.estado_area.x + 10, self.estado_area.y + 180))
+            self.pantalla.blit(texto, (self.estado_area.x + 10, y_tiempo))
         
         # Estadísticas rápidas
         eficiencia = 0
         if len(self.simulador.todos_los_clientes) > 0:
             eficiencia = (len(self.simulador.clientes_atendidos) / len(self.simulador.todos_los_clientes)) * 100
         
+        y_eficiencia = self.estado_area.y + 230 if self.grabando else self.estado_area.y + 210
         texto = self.fuente_pequena.render(f"Eficiencia actual: {eficiencia:.1f}%", True, self.AZUL)
-        self.pantalla.blit(texto, (self.estado_area.x + 10, self.estado_area.y + 210))
+        self.pantalla.blit(texto, (self.estado_area.x + 10, y_eficiencia))
+    
+    def cleanup(self):
+        """Limpia recursos y guarda video si es necesario"""
+        if self.grabando and self.frames:
+            print("Guardando video antes de cerrar...")
+            nombre_video = f"simulacion_interrupcion_{self.simulador.num_boxes}_boxes.avi"
+            self.guardar_video(nombre_video)
+        
+        # Limpiar frames de memoria
+        self.frames.clear()
+        pygame.quit()
