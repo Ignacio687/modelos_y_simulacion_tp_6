@@ -28,9 +28,9 @@ class InterfazVisual:
         self.NARANJA = (255, 165, 0)
         
         # Fuentes
-        self.fuente_grande = pygame.font.Font(None, 36)
-        self.fuente_mediana = pygame.font.Font(None, 24)
-        self.fuente_pequena = pygame.font.Font(None, 18)
+        self.fuente_grande = pygame.font.Font(None, 42)
+        self.fuente_mediana = pygame.font.Font(None, 28)
+        self.fuente_pequena = pygame.font.Font(None, 22)
         
         self.simulador = simulador
         self.velocidad = velocidad
