@@ -26,6 +26,7 @@ class InterfazVisual:
         self.GRIS = (128, 128, 128)
         self.GRIS_CLARO = (200, 200, 200)
         self.NARANJA = (255, 165, 0)
+        self.MORADO = (128, 0, 128)  # Color más contrastante para tiempo extra
         
         # Fuentes
         self.fuente_grande = pygame.font.Font(None, 42)
@@ -175,8 +176,15 @@ class InterfazVisual:
         pygame.draw.rect(self.pantalla, self.GRIS_CLARO, self.stats_area)
         pygame.draw.rect(self.pantalla, self.NEGRO, self.stats_area, 2)
         
-        # Título
-        texto = self.fuente_mediana.render("ESTADÍSTICAS EN TIEMPO REAL", True, self.NEGRO)
+        # Título con estado
+        if self.tiempo_actual < self.simulador.DURACION_SIMULACION:
+            titulo = "ESTADÍSTICAS EN TIEMPO REAL"
+            color_titulo = self.NEGRO
+        else:
+            titulo = "ESTADÍSTICAS - PROCESANDO CLIENTES RESTANTES"
+            color_titulo = self.MORADO  # Color más visible que naranja
+            
+        texto = self.fuente_mediana.render(titulo, True, color_titulo)
         self.pantalla.blit(texto, (self.stats_area.x + 10, self.stats_area.y + 10))
         
         # Tiempo actual
@@ -236,24 +244,27 @@ class InterfazVisual:
             ("Box libre", self.GRIS_CLARO),
             ("Box ocupado", self.VERDE),
             ("Cliente recién llegado", self.AZUL),
-            ("Cliente esperando 15+ min", self.AMARILLO),
-            ("Cliente esperando 25+ min", self.ROJO)
+            ("Esperando 15+ min", self.AMARILLO),  # Texto más corto
+            ("Esperando 25+ min", self.ROJO)      # Texto más corto
         ]
         
         for i, (texto, color) in enumerate(elementos):
-            x = 50 + i * 180  # Espaciado reducido para evitar superposiciones
+            x = 50 + i * 200  # Aumentado espaciado de 180 a 200
             pygame.draw.circle(self.pantalla, color, (x, leyenda_y), 10)
             pygame.draw.circle(self.pantalla, self.NEGRO, (x, leyenda_y), 10, 2)
             
             texto_render = self.fuente_pequena.render(texto, True, self.NEGRO)
             self.pantalla.blit(texto_render, (x + 20, leyenda_y - 8))
     
-    def capturar_frame(self):
-        """Captura el frame actual para el video (limitando frecuencia)"""
+    def capturar_frame(self, velocidad_animacion):
+        """Captura el frame actual para el video a 15 FPS"""
         if self.grabando:
-            # Solo capturar cada 4 frames para reducir memoria y crear video más fluido
+            # Calcular intervalo de captura basado en la velocidad de animación
+            # Para 15 FPS constante en el video final, independiente de la velocidad de simulación
+            frames_por_captura = max(1, velocidad_animacion // 15)
+            
             self.frame_counter += 1
-            if self.frame_counter % 4 == 0:
+            if self.frame_counter % frames_por_captura == 0:
                 try:
                     # Convertir superficie de pygame a array numpy
                     frame = pygame.surfarray.array3d(self.pantalla)
@@ -262,8 +273,8 @@ class InterfazVisual:
                     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     self.frames.append(frame)
                     
-                    # Limitar cantidad de frames en memoria (aprox 5 minutos a 15fps)
-                    max_frames = 4500
+                    # Limitar cantidad de frames en memoria (aprox 10 minutos a 15fps)
+                    max_frames = 9000
                     if len(self.frames) > max_frames:
                         # Eliminar frames más antiguos
                         self.frames = self.frames[-max_frames:]
@@ -328,7 +339,7 @@ class InterfazVisual:
                 print(f"Error con codec alternativo: {e2}")
                 print("La funcionalidad de video podría requerir codecs adicionales")
     
-    def animar_simulacion(self, grabar_video: bool = False):
+    def animar_simulacion(self, grabar_video: bool = False, velocidad_inicial: float = 1.0):
         """Anima la simulación paso a paso"""
         self.grabando = grabar_video
         clock = pygame.time.Clock()
@@ -339,17 +350,33 @@ class InterfazVisual:
         print("Iniciando simulación en tiempo real...")
         print("Controles:")
         print("- ESPACIO: Pausar/Reanudar")
-        print("- +/-: Cambiar velocidad")
+        print("- +/-: Cambiar velocidad (1x, 2x, 4x, 8x, 16x, 32x)")
         print("- ESC: Salir")
         print("- V: Activar/desactivar grabación de video")
         
         pausado = False
-        velocidad_animacion = 60  # FPS base
+        velocidades_disponibles = [15, 30, 60, 120, 240, 480, 960, 1920]  # 0.25x, 0.5x, 1x, 2x, 4x, 8x, 16x, 32x
+        velocidades_factor = [0.25, 0.5, 1, 2, 4, 8, 16, 32]
+        
+        # Encontrar el índice de velocidad inicial más cercano
+        indice_velocidad = 2  # Default 1x
+        if velocidad_inicial in velocidades_factor:
+            indice_velocidad = velocidades_factor.index(velocidad_inicial)
+        else:
+            # Encontrar el más cercano
+            diferencias = [abs(v - velocidad_inicial) for v in velocidades_factor]
+            indice_velocidad = diferencias.index(min(diferencias))
+        
+        velocidad_animacion = velocidades_disponibles[indice_velocidad]
+        print(f"Velocidad inicial: {velocidades_factor[indice_velocidad]}x")
         
         # Inicializar simulador para animación
         print(f"Iniciando simulación con {self.simulador.num_boxes} boxes...")
         
-        while self.tiempo_actual < self.simulador.DURACION_SIMULACION:
+        # Continuar hasta que no haya más clientes por procesar
+        simulacion_activa = True
+        
+        while simulacion_activa:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     print("Cerrando simulación...")
@@ -364,11 +391,17 @@ class InterfazVisual:
                         pausado = not pausado
                         print("PAUSADO" if pausado else "REANUDADO")
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
-                        velocidad_animacion = min(velocidad_animacion * 2, 480)
-                        print(f"Velocidad: {velocidad_animacion//60}x")
+                        if indice_velocidad < len(velocidades_disponibles) - 1:
+                            indice_velocidad += 1
+                            velocidad_animacion = velocidades_disponibles[indice_velocidad]
+                            factor_velocidad = velocidades_factor[indice_velocidad]
+                            print(f"Velocidad: {factor_velocidad}x ({velocidad_animacion} FPS)")
                     elif event.key == pygame.K_MINUS:
-                        velocidad_animacion = max(velocidad_animacion // 2, 15)
-                        print(f"Velocidad: {velocidad_animacion//60}x")
+                        if indice_velocidad > 0:
+                            indice_velocidad -= 1
+                            velocidad_animacion = velocidades_disponibles[indice_velocidad]
+                            factor_velocidad = velocidades_factor[indice_velocidad]
+                            print(f"Velocidad: {factor_velocidad}x ({velocidad_animacion} FPS)")
                     elif event.key == pygame.K_v:
                         self.grabando = not self.grabando
                         if self.grabando:
@@ -384,6 +417,30 @@ class InterfazVisual:
                 # Ejecutar un paso de la simulación
                 self.ejecutar_paso_simulacion()
                 self.tiempo_actual += 1
+                
+                # Verificar si la simulación debe continuar
+                hay_clientes_en_cola = len(self.simulador.cola_espera) > 0
+                hay_boxes_ocupados = any(box.ocupado for box in self.simulador.boxes)
+                
+                # Durante horario normal o si aún hay clientes siendo procesados
+                if (self.tiempo_actual < self.simulador.DURACION_SIMULACION or 
+                    hay_clientes_en_cola or hay_boxes_ocupados):
+                    simulacion_activa = True
+                    
+                    # Mostrar mensaje cuando termine el horario pero aún haya clientes
+                    if (self.tiempo_actual == self.simulador.DURACION_SIMULACION and 
+                        (hay_clientes_en_cola or hay_boxes_ocupados)):
+                        print("🕐 Horario de atención terminado, procesando clientes restantes...")
+                        print(f"   Clientes en cola: {len(self.simulador.cola_espera)}")
+                        print(f"   Boxes ocupados: {sum(1 for box in self.simulador.boxes if box.ocupado)}")
+                else:
+                    simulacion_activa = False
+                    print("✅ Todos los clientes han sido procesados")
+                
+                # Prevenir simulaciones infinitas (máximo 3 horas extra)
+                if self.tiempo_actual > self.simulador.DURACION_SIMULACION + 10800:
+                    print("⚠️  Tiempo límite alcanzado, finalizando simulación...")
+                    simulacion_activa = False
             
             # Dibujar todo
             self.pantalla.fill(self.BLANCO)
@@ -395,7 +452,7 @@ class InterfazVisual:
             self.dibujar_estado(pausado, velocidad_animacion)
             
             pygame.display.flip()
-            self.capturar_frame()
+            self.capturar_frame(velocidad_animacion)
             clock.tick(velocidad_animacion)
         
         # Mostrar estadísticas finales
@@ -424,7 +481,7 @@ class InterfazVisual:
         
         # Procesar eventos
         self.simulador.procesar_finalizacion_atencion()
-        self.simulador.procesar_abandonos()
+        self.simulador.procesar_abandonos(durante_horario_normal=(self.tiempo_actual < self.simulador.DURACION_SIMULACION))
         
         # Progreso cada 10%
         if self.tiempo_actual % (self.simulador.DURACION_SIMULACION // 10) == 0:
@@ -499,11 +556,13 @@ class InterfazVisual:
             "V - Activar/desactivar video",
             "ESC - Salir simulación",
             "",
+            "VELOCIDADES DISPONIBLES:",
+            "0.25x, 0.5x, 1x, 2x,",
+            "4x, 8x, 16x, 32x",
+            "",
             "INFORMACIÓN:",
             "• Simulación: 8:00 a 12:00",
-            "• Clientes llegan aleatorio",
             "• Abandono tras 30 min",
-            "• Atención: 10±5 min"
         ]
         
         y_pos = self.controles_area.y + 45
@@ -511,9 +570,11 @@ class InterfazVisual:
             if control == "":
                 y_pos += 10  # Reducido espaciado
                 continue
+            elif control.startswith("VELOCIDADES DISPONIBLES:"):
+                texto = self.fuente_pequena.render(control, True, self.AZUL)
             elif control.startswith("INFORMACIÓN:"):
                 texto = self.fuente_pequena.render(control, True, self.AZUL)
-            elif control.startswith("•"):
+            elif control.startswith("•") or control in ["0.25x, 0.5x, 1x, 2x,", "4x, 8x, 16x, 32x"]:
                 texto = self.fuente_pequena.render(control, True, self.GRIS)
             else:
                 texto = self.fuente_pequena.render(control, True, self.NEGRO)
@@ -537,13 +598,23 @@ class InterfazVisual:
         self.pantalla.blit(texto, (self.estado_area.x + 10, self.estado_area.y + 45))
         
         # Velocidad
-        velocidad_factor = velocidad_animacion // 60
+        velocidad_factor = velocidad_animacion / 60
         texto = self.fuente_pequena.render(f"Velocidad: {velocidad_factor}x", True, self.NEGRO)
         self.pantalla.blit(texto, (self.estado_area.x + 10, self.estado_area.y + 70))
         
         # Progreso de la simulación
-        progreso = (self.tiempo_actual / self.simulador.DURACION_SIMULACION) * 100
-        texto = self.fuente_pequena.render(f"Progreso: {progreso:.1f}%", True, self.NEGRO)
+        if self.tiempo_actual <= self.simulador.DURACION_SIMULACION:
+            progreso = (self.tiempo_actual / self.simulador.DURACION_SIMULACION) * 100
+            texto = self.fuente_pequena.render(f"Progreso: {progreso:.1f}%", True, self.NEGRO)
+            color_barra = self.VERDE
+        else:
+            # Tiempo extra
+            tiempo_extra = self.tiempo_actual - self.simulador.DURACION_SIMULACION
+            minutos_extra = tiempo_extra // 60
+            progreso = 100  # Mostrar 100% en horario normal
+            texto = self.fuente_pequena.render(f"Tiempo extra: +{minutos_extra} min", True, self.MORADO)
+            color_barra = self.MORADO
+        
         self.pantalla.blit(texto, (self.estado_area.x + 10, self.estado_area.y + 95))
         
         # Barra de progreso
@@ -557,9 +628,9 @@ class InterfazVisual:
         pygame.draw.rect(self.pantalla, self.NEGRO, (barra_x, barra_y, barra_width, barra_height), 2)
         
         # Progreso de la barra
-        progreso_width = int((progreso / 100) * barra_width)
+        progreso_width = int((min(progreso, 100) / 100) * barra_width)
         if progreso_width > 0:
-            pygame.draw.rect(self.pantalla, self.VERDE, (barra_x, barra_y, progreso_width, barra_height))
+            pygame.draw.rect(self.pantalla, color_barra, (barra_x, barra_y, progreso_width, barra_height))
         
         # Estado de grabación
         if self.grabando:
